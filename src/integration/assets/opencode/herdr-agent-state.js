@@ -60,10 +60,17 @@ function stateFromSessionStatus(status) {
     : undefined;
 }
 
-function attachedSessionIDFromArgv(argv) {
-  // `process.argv[2]` is the OpenCode subcommand. Do not treat an arbitrary
-  // argument named "attach" as one, such as a normal session id or URL.
-  if (argv[2] !== "attach") {
+function selectedSessionIDFromArgv(argv) {
+  const command = argv[2];
+  if (command?.startsWith("--session=")) {
+    return command.slice("--session=".length) || undefined;
+  }
+  if (command === "-s" || command === "--session") {
+    return argv[3] || undefined;
+  }
+  // Do not treat `run --session` as pane ownership. Only `attach` uses a
+  // session flag after a subcommand to select the pane's interactive session.
+  if (command !== "attach") {
     return undefined;
   }
 
@@ -250,15 +257,15 @@ export const HerdrAgentStatePlugin = async () => {
     return {};
   }
 
-  const attachedSessionID = attachedSessionIDFromArgv(process.argv);
-  if (attachedSessionID) {
-    setOwnedRootSession(attachedSessionID);
+  const selectedSessionID = selectedSessionIDFromArgv(process.argv);
+  if (selectedSessionID) {
+    setOwnedRootSession(selectedSessionID);
   }
   const sessionRole = (sessionID, canReplaceOwnedRoot = false) => {
     if (!sessionID) {
       return undefined;
     }
-    if (attachedSessionID) {
+    if (selectedSessionID) {
       return belongsToOwnedTree(sessionID)
         ? sessionID === ownedRootSessionID
           ? "root"
@@ -316,7 +323,7 @@ export const HerdrAgentStatePlugin = async () => {
       const role = sessionRole(sessionID, canReplaceOwnedRoot);
       const isForeignTopLevelUpdate =
         type === "session.updated" &&
-        !attachedSessionID &&
+        !selectedSessionID &&
         sessionID &&
         !role &&
         !sessionParents.has(sessionID);

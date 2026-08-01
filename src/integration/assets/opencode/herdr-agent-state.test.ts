@@ -536,6 +536,37 @@ test("does not treat a normal run session argument as attached ownership", async
   expect(requests.map(requestSessionID)).toEqual([undefined]);
 });
 
+test("tracks a session selected by top-level TUI flags", async () => {
+  for (const args of [
+    ["-s", "selected-session"],
+    ["--session", "selected-session"],
+    ["--session=selected-session"],
+  ]) {
+    process.argv = ["node", "opencode", ...args];
+    const plugin = await loadPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.status",
+        properties: { sessionID: "selected-session", status: { type: "busy" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.status",
+        properties: { sessionID: "other-session", status: { type: "busy" } },
+      },
+    });
+  }
+
+  expect(requests.map(requestState)).toEqual(["working", "working", "working"]);
+  expect(requests.map(requestSessionID)).toEqual([
+    "selected-session",
+    "selected-session",
+    "selected-session",
+  ]);
+});
+
 test("tracks an attached child session as the pane session", async () => {
   process.argv = ["node", "opencode", "attach", "http://example.test", "--session", "child-session"];
   const plugin = await loadPlugin();
