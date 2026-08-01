@@ -60,17 +60,10 @@ function stateFromSessionStatus(status) {
     : undefined;
 }
 
-function selectedSessionIDFromArgv(argv) {
-  const command = argv[2];
-  if (command?.startsWith("--session=")) {
-    return command.slice("--session=".length) || undefined;
-  }
-  if (command === "-s" || command === "--session") {
-    return argv[3] || undefined;
-  }
-  // Do not treat `run --session` as pane ownership. Only `attach` uses a
-  // session flag after a subcommand to select the pane's interactive session.
-  if (command !== "attach") {
+function attachedSessionIDFromArgv(argv) {
+  // `process.argv[2]` is the OpenCode subcommand. Do not treat an arbitrary
+  // argument named "attach" as one, such as a normal session id or URL.
+  if (argv[2] !== "attach") {
     return undefined;
   }
 
@@ -257,15 +250,15 @@ export const HerdrAgentStatePlugin = async () => {
     return {};
   }
 
-  const selectedSessionID = selectedSessionIDFromArgv(process.argv);
-  if (selectedSessionID) {
-    setOwnedRootSession(selectedSessionID);
+  const attachedSessionID = attachedSessionIDFromArgv(process.argv);
+  if (attachedSessionID) {
+    setOwnedRootSession(attachedSessionID);
   }
   const sessionRole = (sessionID, canReplaceOwnedRoot = false) => {
     if (!sessionID) {
       return undefined;
     }
-    if (selectedSessionID) {
+    if (attachedSessionID) {
       return belongsToOwnedTree(sessionID)
         ? sessionID === ownedRootSessionID
           ? "root"
@@ -302,7 +295,9 @@ export const HerdrAgentStatePlugin = async () => {
 
   return {
     "chat.message": async ({ sessionID }) => {
-      const role = sessionRole(sessionID);
+      // A user message is the first reliable ownership signal when a resumed
+      // TUI starts in a Bun worker whose argv omits the selected session.
+      const role = sessionRole(sessionID, !awaitingRootCreation);
       if (sessionID && !role) {
         return;
       }
@@ -323,7 +318,7 @@ export const HerdrAgentStatePlugin = async () => {
       const role = sessionRole(sessionID, canReplaceOwnedRoot);
       const isForeignTopLevelUpdate =
         type === "session.updated" &&
-        !selectedSessionID &&
+        !attachedSessionID &&
         sessionID &&
         !role &&
         !sessionParents.has(sessionID);

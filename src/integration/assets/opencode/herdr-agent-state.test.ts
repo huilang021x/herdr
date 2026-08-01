@@ -536,35 +536,53 @@ test("does not treat a normal run session argument as attached ownership", async
   expect(requests.map(requestSessionID)).toEqual([undefined]);
 });
 
-test("tracks a session selected by top-level TUI flags", async () => {
-  for (const args of [
-    ["-s", "selected-session"],
-    ["--session", "selected-session"],
-    ["--session=selected-session"],
-  ]) {
-    process.argv = ["node", "opencode", ...args];
-    const plugin = await loadPlugin();
+test("a user message reclaims ownership for a resumed root session", async () => {
+  const plugin = await loadPlugin();
 
-    await plugin.event({
-      event: {
-        type: "session.status",
-        properties: { sessionID: "selected-session", status: { type: "busy" } },
-      },
-    });
-    await plugin.event({
-      event: {
-        type: "session.status",
-        properties: { sessionID: "other-session", status: { type: "busy" } },
-      },
-    });
-  }
+  await plugin.event({
+    event: {
+      type: "session.status",
+      properties: { sessionID: "stale-root", status: { type: "idle" } },
+    },
+  });
+  await plugin["chat.message"]({ sessionID: "resumed-root" });
+  await plugin.event({
+    event: {
+      type: "session.status",
+      properties: { sessionID: "resumed-root", status: { type: "busy" } },
+    },
+  });
 
-  expect(requests.map(requestState)).toEqual(["working", "working", "working"]);
+  expect(requests.map(requestState)).toEqual(["idle", "working", "working"]);
   expect(requests.map(requestSessionID)).toEqual([
-    "selected-session",
-    "selected-session",
-    "selected-session",
+    "stale-root",
+    "resumed-root",
+    "resumed-root",
   ]);
+});
+
+test("a child user message does not replace its owned root", async () => {
+  const plugin = await loadPlugin();
+
+  await plugin.event({
+    event: {
+      type: "session.status",
+      properties: { sessionID: "root-session", status: { type: "idle" } },
+    },
+  });
+  await plugin.event({
+    event: {
+      type: "session.created",
+      properties: {
+        sessionID: "child-session",
+        info: { id: "child-session", parentID: "root-session" },
+      },
+    },
+  });
+  await plugin["chat.message"]({ sessionID: "child-session" });
+
+  expect(requests.map(requestState)).toEqual(["idle", "working"]);
+  expect(requests.map(requestSessionID)).toEqual(["root-session", undefined]);
 });
 
 test("tracks an attached child session as the pane session", async () => {
